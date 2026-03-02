@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no" />
+  <title>かんたん迷路（スマホ対応版）</title>
+  <style>
+    :root{
+      --bg:#050607;
+      --panel:#0f5f7a;
+      --panel2:#0b3f52;
+      --wall:#062a36;
+      --text:#eaf6ff;
+      --player:#ffd54a;
+      --stairs:#b9f6ff;
+      --boss:#ff6b6b;
+    }
+    html,body{height:100%; margin:0; background:var(--bg); color:var(--text); overflow:hidden;
+      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Noto Sans JP", sans-serif;}
+    .wrap{height:100%; display:flex; align-items:center; justify-content:center; padding:16px; box-sizing:border-box;}
+    .phone{
+      width:min(420px, 92vw);
+      height:min(760px, 92vh);
+      border:4px solid #0a2b36;
+      box-shadow: 0 0 0 6px #000 inset;
+      background:#000;
+      position:relative;
+      padding:18px;
+      box-sizing:border-box;
+      display:flex;
+      flex-direction:column;
+    }
+    .mazeBox{
+      background:var(--panel);
+      border:4px solid var(--panel2);
+      flex-grow:1;
+      border-radius:10px;
+      position:relative;
+      overflow:hidden;
+      display:flex;
+      align-items:center;
+      justify-content:center;
+    }
+    canvas{max-width:100%; max-height:100%; display:block; image-rendering: pixelated;}
+    .padArea{height:220px; display:flex; align-items:center; justify-content:center; padding-top:14px; box-sizing:border-box;}
+    .pad{
+      width:150px;
+      height:150px;
+      border-radius:999px;
+      background:rgba(15,95,122,.5);
+      border:4px solid rgba(11,63,82,.8);
+      position:relative;
+      touch-action:none;
+      user-select:none;
+    }
+    .knob{
+      width:60px; height:60px; border-radius:999px;
+      background:#0a4a60; border:3px solid #083445;
+      position:absolute; left:50%; top:50%;
+      transform:translate(-50%,-50%);
+      box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+      pointer-events: none;
+    }
+    .topBar{
+      display:flex; gap:10px; align-items:center; justify-content:space-between;
+      margin-bottom:10px;
+    }
+    .pill{
+      background:#0b2b36; border:2px solid #0a3a4a;
+      padding:6px 12px; border-radius:999px; font-size:13px;
+    }
+    button{
+      background:#0a4a60; color:var(--text);
+      border:none; padding:8px 16px; border-radius:10px; font-size:13px; font-weight:bold;
+    }
+    .msg{
+      text-align:center; font-size:14px;
+      padding:8px; border-radius:10px;
+      background:rgba(255,255,255,.05);
+      margin-top:10px; min-height:1.2em;
+    }
+    .fade{
+      position:absolute; inset:0;
+      background:#000; opacity:0; pointer-events:none;
+      transition: opacity 220ms linear; z-index:4;
+    }
+    .fade.on{ opacity:1; }
+  </style>
+</head>
+<body>
+<div class="wrap">
+  <div class="phone">
+    <div class="topBar">
+      <div class="pill">🧩 AREA <span id="area">1</span>/<span id="areaMax">1</span></div>
+      <button id="newStageBtn">リセット</button>
+    </div>
+
+    <div class="mazeBox">
+      <canvas id="cv"></canvas>
+      <div class="fade" id="fade"></div>
+    </div>
+
+    <div class="msg" id="msg">ロード中...</div>
+
+    <div class="padArea">
+      <div class="pad" id="pad">
+        <div class="knob" id="knob"></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+(() => {
+  const cv = document.getElementById('cv');
+  const ctx = cv.getContext('2d');
+  const msg = document.getElementById('msg');
+  const fade = document.getElementById('fade');
+  const areaEl = document.getElementById('area');
+  const areaMaxEl = document.getElementById('areaMax');
+  const newStageBtn = document.getElementById('newStageBtn');
+  const pad = document.getElementById('pad');
+  const knob = document.getElementById('knob');
+
+  const randInt = (a,b)=> Math.floor(Math.random()*(b-a+1))+a;
+
+  // --- 迷路生成 ---
+  function generateMaze(cellW, cellH, extraOpenRate=0.15){
+    const W = cellW*2 + 1;
+    const H = cellH*2 + 1;
+    const g = Array.from({length:H}, () => Array(W).fill(1));
+
+    for(let cy=0; cy<cellH; cy++) for(let cx=0; cx<cellW; cx++) g[cy*2+1][cx*2+1] = 0;
+
+    const visited = Array.from({length:cellH}, () => Array(cellW).fill(false));
+    const stack = [];
+    let sx = randInt(0, cellW-1), sy = randInt(0, cellH-1);
+    visited[sy][sx] = true;
+    stack.push([sx,sy]);
+
+    const dirs = [[1,0],[-1,0],[0,1],[0,-1]];
+    while(stack.length){
+      const [cx,cy] = stack[stack.length-1];
+      const cand = [];
+      for(const [dx,dy] of dirs){
+        const nx = cx+dx, ny = cy+dy;
+        if(nx>=0 && nx<cellW && ny>=0 && ny<cellH && !visited[ny][nx]) cand.push([nx,ny]);
+      }
+      if(!cand.length){ stack.pop(); continue; }
+      const [nx,ny] = cand[randInt(0, cand.length-1)];
+      g[cy+ny+1][cx+nx+1] = 0;
+      visited[ny][nx] = true;
+      stack.push([nx,ny]);
+    }
+    // ループを少し作る
+    for(let y=1;y<H-1;y++) for(let x=1;x<W-1;x++) if(g[y][x]===1 && Math.random()<extraOpenRate) g[y][x]=0;
+    return g;
+  }
+
+  // --- ゲーム状態 ---
+  const tile = 30;
+  let stage = null;
+
+  function makeStage(){
+    const areaCount = randInt(2,4);
+    const areas = [];
+    for(let i=0; i<areaCount; i++){
+      const g = generateMaze(randInt(5,7), randInt(6,8));
+      const floors = [];
+      for(let y=0;y<g.length;y++) for(let x=0;x<g[0].length;x++) if(g[y][x]===0) floors.push([x,y]);
+      const start = floors[randInt(0, floors.length-1)];
+      const stairs = floors.filter(f => Math.hypot(f[0]-start[0], f[1]-start[1]) > 6);
+      const goal = stairs.length ? stairs[randInt(0, stairs.length-1)] : floors[floors.length-1];
+      areas.push({ g, start, goal });
+    }
+    stage = { areas, idx: 0, px:0, py:0, vx:0, vy:0, locked:false };
+    areaMaxEl.textContent = areaCount;
+    loadArea(0, true);
+  }
+
+  function loadArea(i, first){
+    stage.idx = i;
+    const a = stage.areas[i];
+    stage.px = a.start[0] + 0.5; stage.py = a.start[1] + 0.5;
+    areaEl.textContent = i+1;
+    msg.textContent = i === stage.areas.length-1 ? "最後のエリア！赤いボスを探せ" : "水色の階段を目指そう";
+    cv.width = a.g[0].length * tile; cv.height = a.g.length * tile;
+  }
+
+  // --- 更新・描画 ---
+  function draw(){
+    const a = stage.areas[stage.idx];
+    ctx.fillStyle = "#062a36"; ctx.fillRect(0,0,cv.width,cv.height);
+    for(let y=0; y<a.g.length; y++){
+      for(let x=0; x<a.g[0].length; x++){
+        if(a.g[y][x]===0){
+          ctx.fillStyle = "#0f5f7a";
+          ctx.fillRect(x*tile, y*tile, tile, tile);
+        }
+      }
+    }
+    // Goal
+    ctx.fillStyle = stage.idx === stage.areas.length-1 ? "#ff6b6b" : "#b9f6ff";
+    ctx.fillRect(a.goal[0]*tile+6, a.goal[1]*tile+6, tile-12, tile-12);
+    // Player
+    ctx.fillStyle = "#ffd54a";
+    ctx.beginPath(); ctx.arc(stage.px*tile, stage.py*tile, 10, 0, Math.PI*2); ctx.fill();
+  }
+
+  function update(){
+    if(!stage || stage.locked) return;
+    const speed = 0.08;
+    const nextX = stage.px + stage.vx * speed;
+    const nextY = stage.py + stage.vy * speed;
+    
+    const isWall = (tx, ty) => (stage.areas[stage.idx].g[Math.floor(ty)]?.[Math.floor(tx)] !== 0);
+    if(!isWall(nextX - 0.2, stage.py) && !isWall(nextX + 0.2, stage.py)) stage.px = nextX;
+    if(!isWall(stage.px, nextY - 0.2) && !isWall(stage.px, nextY + 0.2)) stage.py = nextY;
+
+    const dist = Math.hypot(stage.px - (stage.areas[stage.idx].goal[0]+0.5), stage.py - (stage.areas[stage.idx].goal[1]+0.5));
+    if(dist < 0.5){
+      if(stage.idx < stage.areas.length-1){
+        stage.locked = true;
+        fade.classList.add('on');
+        setTimeout(() => { loadArea(stage.idx+1); fade.classList.remove('on'); stage.locked = false; }, 300);
+      } else {
+        msg.textContent = "ゴール！おめでとう！";
+      }
+    }
+  }
+
+  // --- コントローラー ---
+  const handleTouch = (e) => {
+    e.preventDefault();
+    const t = e.touches[0];
+    const rect = pad.getBoundingClientRect();
+    const centerX = rect.left + rect.width/2;
+    const centerY = rect.top + rect.height/2;
+    let dx = t.clientX - centerX;
+    let dy = t.clientY - centerY;
+    const dist = Math.min(Math.hypot(dx, dy), 60);
+    const angle = Math.atan2(dy, dx);
+    
+    const kx = Math.cos(angle) * dist;
+    const ky = Math.sin(angle) * dist;
+    knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+    
+    stage.vx = (kx / 60);
+    stage.vy = (ky / 60);
+  };
+
+  pad.addEventListener('touchstart', handleTouch);
+  pad.addEventListener('touchmove', handleTouch);
+  pad.addEventListener('touchend', () => {
+    knob.style.transform = `translate(-50%, -50%)`;
+    stage.vx = 0; stage.vy = 0;
+  });
+
+  newStageBtn.onclick = makeStage;
+  
+  function loop(){ update(); draw(); requestAnimationFrame(loop); }
+  makeStage();
+  loop();
+})();
+</script>
+</body>
+</html>
